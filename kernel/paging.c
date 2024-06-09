@@ -5,12 +5,13 @@
 #include <time.h>
 #include "basic_include.h"
 
-Paging_return paging (unsigned char *memory) {
+
+Paging_return paging (unsigned char *memory, unsigned char *secondary) {
     Paging_return result;
     CircularQueue queue;
     initialize_queue(&queue);
     int process_count;
-    Process** processes = initialize_processes(&process_count, &queue, memory);
+    Process** processes = initialize_processes(&process_count, &queue, memory,secondary);
 
     printf("\n");
 
