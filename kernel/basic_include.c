@@ -5,6 +5,7 @@
 #include <time.h>
 #include <stdbool.h>
 #include "basic_include.h"
+#include <limits.h>
 
 Page *physical_memory[NUM_FRAMES];
 int frame_bitmap[NUM_FRAMES];
@@ -33,6 +34,13 @@ void print_queue(CircularQueue *queue) {
 }
 
 void round_robin(Process** processes, int process_count, int time_quantum, CircularQueue *queue, unsigned char *memory) {
+    CircularQueue* ready_queue = malloc(sizeof(CircularQueue));
+    ready_queue->front = 0;
+    ready_queue->rear = 0;
+    for (int i = 0; i < process_count; i++) {
+        ready_queue->items[i] = -1;
+    }
+   
     int remaining_burst_times[process_count];
     for (int i = 0; i < process_count; i++) {
         remaining_burst_times[i] = processes[i]->pcb->burst_time;
@@ -40,24 +48,31 @@ void round_robin(Process** processes, int process_count, int time_quantum, Circu
 
     int current_time = 0;
     int remaining_processes = process_count;
-
     while (remaining_processes > 0) {
-        int pcb_frame_number = dequeue(queue);
-        if (pcb_frame_number == -1) {
-            printf("No PCB frame to schedule\n");
-            return;
+        for (int i = 0; i < process_count; i++) { // Change remain_process to process_count
+            if (processes[i]->pcb->arrival_time == current_time) {
+                enqueue(ready_queue, processes[i]->pcb_frame_number);
+                printf("Process %d is arrived\n", processes[i]-> pcb_frame_number+1);
+            }
+        }
+
+        int pcb_frame_number_from_Q = dequeue(ready_queue);
+        if (pcb_frame_number_from_Q == -1) {
+            // No process in the queue, increment the current time
+            current_time++;
+            continue;
         }
 
         Process *proc = NULL;
         for (int i = 0; i < process_count; i++) {
-            if (processes[i]->pcb_frame_number == pcb_frame_number) {
+            if (processes[i]->pcb_frame_number == pcb_frame_number_from_Q) {
                 proc = processes[i];
                 break;
             }
         }
 
         if (proc == NULL) {
-            printf("No process found for PCB frame %d\n", pcb_frame_number);
+            printf("No process found for PCB frame %d\n", pcb_frame_number_from_Q);
             return;
         }
 
@@ -79,11 +94,13 @@ void round_robin(Process** processes, int process_count, int time_quantum, Circu
                 printf("Process %d finished at time %d\n\n", proc->pid, current_time);
                 remaining_processes--;
             } else {
-                enqueue(queue, pcb_frame_number);
+                enqueue(ready_queue, pcb_frame_number_from_Q);
             }
         }
     }
+    free(ready_queue); // Free the allocated memory for the ready queue
 }
+
 
 void print_process_info(Process** processes, int process_count) {
     printf("\n");
@@ -119,32 +136,31 @@ int is_empty(CircularQueue *q) {
 int is_full(CircularQueue *q) {
     return (q->rear + 1) % QUEUE_SIZE == q->front;
 }
-
 void enqueue(CircularQueue *q, int value) {
-    if (is_full(q)) {
-        printf("Queue is full\n");
-        return;
-    }
-    if (is_empty(q)) {
-        q->front = 0;
-    }
-    q->rear = (q->rear + 1) % QUEUE_SIZE;
+    // if (is_full(q)) {
+    //     printf("Queue is full\n");
+    //     return;
+    // }
+    //printf("en value:%d", value);
     q->items[q->rear] = value;
+    q->rear = (q->rear + 1) % QUEUE_SIZE;
+   
 }
 
 int dequeue(CircularQueue *q) {
-    if (is_empty(q)) {
-        printf("Queue is empty\n");
-        return -1;
-    }
+    // if (is_empty(q)) {
+    //     printf("Queue is empty\n");
+    //     return -1;
+    // }
     int value = q->items[q->front];
-    if (q->front == q->rear) {
-        q->front = q->rear = -1;
-    } else {
-        q->front = (q->front + 1) % QUEUE_SIZE;
-    }
+   
+   
+    q->front = (q->front + 1) % QUEUE_SIZE;
+   
     return value;
 }
+
+
 
 
 // paging
@@ -341,19 +357,29 @@ void free_process(Process *proc) {
     for (int i = 0; i < NUM_PAGES; i++) {
         if (proc->vm->pages[i] != NULL) {
             int frame_number = proc->page_table[i]->frame_number;
-            frame_bitmap[frame_number] = 0;
-            free(physical_memory[frame_number]);
+            if (frame_number != -1) {
+                frame_bitmap[frame_number] = 0;
+                free(physical_memory[frame_number]);
+                physical_memory[frame_number] = NULL;
+            }
             proc->vm->pages[i] = NULL;
+        }
+        if (proc->page_table[i]->is_in_secondary_storage) {
+            int block_number = proc->page_table[i]->block_number;
+            if (block_number != -1) {
+                block_bitmap[block_number] = 0;  // 블록을 사용 가능한 상태로 만듭니다
+            }
         }
         free(proc->page_table[i]);
     }
 
     pcb_frame_bitmap[proc->pcb_frame_number] = 0;
-    free(proc->pcb);
+    //free(proc->pcb);
 
     free(proc->vm);
     free(proc);
 }
+
 
 
 Process** initialize_processes(int* process_count, CircularQueue *queue, unsigned char *memory,unsigned char *secondary) {
@@ -473,4 +499,5 @@ void print_frame_status() {
     printf("\n");
     printf("\n");
 }
+
 
